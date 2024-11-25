@@ -9,17 +9,20 @@ shud.env(
   prjname,
   inpath = file.path("input", prjname),
   outpath = file.path("output", paste0(prjname, ".out")),
-  anapath = file.path(outpath, "SHUDtb")
+  anapath = file.path(outpath, "postprocessing"),
+  version = 2
 )
 }
 \arguments{
-\item{prjname}{charactor of SHUD model project name.}
+\item{prjname}{character of SHUD model project name.}
 
 \item{inpath}{path of SHUD model input directory}
 
 \item{outpath}{path of SHUD model output directory}
 
-\item{anapath}{charactor of SHUD model project name.}
+\item{anapath}{character of SHUD model project name.}
+
+\item{version}{version of SHUD model.}
 }
 \description{
 Setup .shud environment.

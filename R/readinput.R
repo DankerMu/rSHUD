@@ -20,7 +20,7 @@ read.df <-function(file, text = readLines(file), sep='\t'){
     }else{
     }
     # print(text[0:nr + 1 + r0])
-    xl[[i]] = utils::read.table(text = text[0:nr + 1 + r0], header = T, sep = sep)
+    xl[[i]] = rbind(utils::read.table(text = text[0:nr + 1 + r0], header = T, sep = sep))
     # xl[[i]] = as.matrix(utils::read.table(text = text[0:nr + 1 + r0], header = T))
     r0 = r0 + nr + 2;
     if(r0 + 1 > nrow){

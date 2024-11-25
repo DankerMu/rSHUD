@@ -8,7 +8,7 @@ readout(
   keyword,
   path = get("outpath", envir = .shud),
   ASCII = FALSE,
-  ver = 2,
+  ver = get("version", envir = .shud),
   file = file.path(path, paste0(get("PRJNAME", envir = .shud), ".", keyword, ".dat"))
 )
 }

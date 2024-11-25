@@ -6,7 +6,8 @@ x=lapply(clib, library, character.only=T)
 library(rSHUD)
 
 # === pre2. create directories  ============
-dir.prj = '~/Documents/Ex_waerma'
+# dir.prj = '/Users/leleshu/CloudDrive/文章天下事/Drafts/2023.06_rSHUD_gmd/Ex_waerma'
+dir.prj = '/Users/leleshu/Documents/Ex_waerma'
 dir.forc = file.path(dir.prj, 'forc')
 dir.fig = file.path(dir.prj, 'figure')
 dir.create(dir.forc, showWarnings = FALSE, recursive = TRUE)
@@ -15,8 +16,7 @@ dir.create(dir.fig, showWarnings = FALSE, recursive = TRUE)
 # === pre3. setup the project ============
 prjname = 'waerma'
 model.in <- file.path(dir.prj, 'input', prjname)
-# model.out <- file.path(dir.prj, 'output', paste0(prjname, '.out'))
-model.out <- '~/Documents/output/waerma.out'
+model.out <- file.path(dir.prj, 'output', paste0(prjname, '.out'))
 
 fin=shud.filein(prjname, inpath = model.in, outpath = model.out )
 shud.env(prjname, inpath = model.in, outpath = model.out )
@@ -60,11 +60,12 @@ oid = getOutlets()
 qdown = readout('rivqdown')
 prcp = readout('elevprcp')
 xt = 1:(365*2)+365*1
+# xt=1:nrow(qdown)
 q=qdown[xt, oid]
 pq = cbind(q, rowMeans(prcp[xt,]))[,2:1]
 # gl[[1]] = autoplot(q)+xlab('')+ylab('Discharge (m^3/day)')+theme_bw()
 gl[[1]] = hydrograph(pq, ylabs = c('Preciptation (mm)', 'Discharge (cmd)'))
-gl[[1]] 
+plot(gl[[1]] )
 
 # === 2. plot Water Balance ============
 xl=loaddata(varname=c('rivqdown', 'eleveta', 'elevetp', 'elevprcp', 'eleygw'))
@@ -99,10 +100,11 @@ gl[[4]]
 
 # === Saving the plots ============
 gg=gridExtra::arrangeGrob(grobs=gl, nrow=2, ncol=2)
-ggsave(plot = gg, filename = file.path(dir.fig, 'waerma_res.png'), width = 7, height=7, dpi=400, units = 'in')
+ggsave(plot = gg, filename = file.path(dir.fig, 'waerma_res.png'), 
+       width = 9, height=9, dpi=400, units = 'in')
 
 for(i in 1:4){
   ggsave(plot = gl[[i]], filename = file.path(dir.fig, paste0('waerma_res_', i, '.png')),
-         width = 3.5, height=4, dpi=400, units = 'in')
+         width = 4.5, height=5, dpi=400, units = 'in')
 }
-
+shud.calib()

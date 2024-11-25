@@ -14,7 +14,7 @@
 #' @export  
 readout <- function(keyword,
                     path=get('outpath', envir=.shud) , ASCII=FALSE,
-                    ver = 2.0,
+                    ver = get('version', envir=.shud),
                     file = file.path(path, paste0(get('PRJNAME', envir=.shud),'.', keyword,'.dat') ) ){
   msg='readout::'
   fid=file(file, 'rb');
@@ -38,7 +38,7 @@ readout <- function(keyword,
   
   nrr = length(dat)/(nc+1)
   nr = round(nrr)
-  if(nr < nrr){
+  if(nr != nrr){
     message(msg, 'File may not completed. ', nrr, "X", nc+1)
   }
   mat=t(matrix(dat[1:( nr*(nc+1) )], nrow=nc+1))
@@ -92,7 +92,7 @@ loaddata <- function(
             paste0('elev',c('etp', 'eta', 'etev', 'ettr', 'etic') ),
             paste0('rivq',c('down', 'sub', 'surf')),
             paste0('rivy','stage')
-  ) ,  rdsfile = NULL){
+  ) ,  rdsfile = NULL, ver=get('version', envir=.shud)){
   msg='loaddata::'
   varname = tolower(varname)
   print(varname)
@@ -109,7 +109,7 @@ loaddata <- function(
   for(i in 1:nv){
     vn=varname[i]
     message(msg, i, '/', nv, '\t', vn)
-    x=readout(vn);
+    x=readout(vn, ver=ver);
     ret[[i]] = x
   }
   names(ret) = varname;
@@ -151,7 +151,7 @@ BasicPlot <- function(
     varname = tolower(varname)
     print(varname)
     nv=length(varname)
-    xl=loaddata(varname = varname, rdsfile = rdsfile)
+    xl=loaddata(varname = varname, rdsfile = rdsfile, get('version', envir=.shud))
   }else{
     varname = names(xl)
     print(varname)

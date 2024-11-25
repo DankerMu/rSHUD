@@ -175,6 +175,7 @@ wb.ele <-function(
   dimnames(arr)[[3]] = c('P','ET_IC', 'ET_TR','ET_EV', 'qs', 'qg','dys','dyu', 'dyg')
   arr
 }
+# we=wb.ele()
 
 #' Calculate the Change of Storage.
 #' \code{DeltaS}
@@ -206,7 +207,7 @@ wb.DS<-function(xl=loaddata(varname = c(paste0('eley', c('surf', 'unsat', 'gw'))
   rtype = pr@river$Type
   ra = pr@rivertype$Width[rtype] * pr@river$Length
   AA = sum(getArea())
-  por=g$ThAETS.m3_m3.[att$GEOL] * cfg.calib$GEOL_THAETS
+  por=g$ThetaS.m3_m3.[att$GEOL] * cfg.calib$GEOL_THETAS
   ds.sf=DeltaS(xl$eleysurf, x0=ic$minit$Surface)
   ds.us=DeltaS(xl$eleyunsat, x0=ic$minit$Unsat) * por
   ds.gw=DeltaS(xl$eleygw, x0=ic$minit$GW) * por
@@ -269,5 +270,3 @@ wb.lake<- function(xl = loaddata(varname =
   names(yl) = paste0('lake', lakeid)
   return(yl)
 }
-
-

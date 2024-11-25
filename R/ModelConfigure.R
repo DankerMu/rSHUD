@@ -92,9 +92,10 @@ shud.calib <- function(){
     'RIV_SINU', 'RIV_CWR', 'RIV_BedThick',
     'RIV_BSLOPE+','RIV_DPTH+','RIV_WDTH+', 
     'IC_GW+', 'IC_RIV+',
-    'AQ_DEPTH+' ,
-    'Fzn_surfmax', 'Fzn_surfmin', 'Fzn_surfday', 
-    'Fzn_submax', 'Fzn_submin', 'Fzn_subday'
+    'AQ_DEPTH+' 
+    # ,
+    # 'Fzn_surfmax', 'Fzn_surfmin', 'Fzn_surfday',
+    # 'Fzn_submax', 'Fzn_submin', 'Fzn_subday'
     ) )
   v=data.frame(rbind(rep(1, length(cn))))
   names(v) = toupper(cn)
@@ -111,3 +112,4 @@ shud.calib <- function(){
   
   return(v)
 }
+# shud.calib()

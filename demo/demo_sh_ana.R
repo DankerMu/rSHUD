@@ -6,7 +6,7 @@ x=lapply(clib, library, character.only=T)
 library(rSHUD)
 
 # === pre2. create directories  ============
-dir.prj = '../demo'
+dir.prj = '../demo/sh'
 dir.forc = file.path(dir.prj, 'forc')
 dir.fig = file.path(dir.prj, 'figure')
 dir.create(dir.forc, showWarnings = FALSE, recursive = TRUE)
@@ -69,6 +69,7 @@ gl[[1]]
 
 # === 2. plot Water Balance ============
 xl=loaddata(varname=c('rivqdown', 'eleveta', 'elevetp', 'elevprcp', 'eleygw'))
+# undebug(wb.all)
 wb=wb.all(xl=xl, plot=F)[-(1:12)]*1000
 gl[[2]] = hydrograph(wb, ylabs = c('Storage (mm)', 'Flux (mm/mon)'))
 gl[[2]]
@@ -95,5 +96,6 @@ gl[[4]]
 
 # === Saving the plots ============
 gg=gridExtra::arrangeGrob(grobs=gl, nrow=2, ncol=2)
-ggsave(plot = gg, filename = file.path(dir.fig, 'waerma_res.png'), width = 7, height=7, dpi=400, units = 'in')
+ggsave(plot = gg, filename = file.path(dir.fig, 'sh_res.png'), 
+       width = 9, height=9, dpi=400, units = 'in')
 

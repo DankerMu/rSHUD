@@ -51,7 +51,7 @@ rcl.lc=cbind(att.lc[, 1], 1:nrow(att.lc))
 r.lc = projectRaster(reclassify(r0.lc, rcl.lc), crs = crs.pcs, method="ngb")
 
 tsd.forc = waerma$tsd$forc
-tsd.lai = waerma$tsd$lai[[1]]
+tsd.lai = waerma$tsd$lai
 
 # === 5. some threshold for model deployment ============
 AREA = 9853260 # KNOWN Area

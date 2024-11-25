@@ -104,6 +104,9 @@ shud.att <- function(tri, r.soil =NULL, r.geol=NULL, r.lc=NULL, r.forc=NULL,
         xv = xv * rr
       }else{
         xv = extract.id(rr, pxy)
+        if( nrow(pxy) < length(xv) ){
+          xv = extract.id(rr, pxy*0.0001)
+        }
       }
     }
     xv[is.na(xv)] = v0

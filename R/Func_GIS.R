@@ -118,7 +118,7 @@ shud.mask  <- function (pm = readmesh(), proj=NULL,
       grd <- sp::makegrid(sp0, n = n)
     }else{
       # grd <- as.data.frame(sp::spsample(spm, "regular", cellsize = cellsize))
-      grd <- sp::makegrid(sp0, cellsize = cellsize)
+      grd <- sp::makegrid(sp0, cellsize = cellsize, pretty = FALSE)
     }
     names(grd)       <- c("X", "Y")
     sp::coordinates(grd) <- c("X", "Y")
