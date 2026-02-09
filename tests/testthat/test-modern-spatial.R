@@ -71,3 +71,15 @@ test_that("xyz2Raster returns terra SpatRaster", {
   r2 <- xyz2Raster(x = x, y = y, arr = arr3, flip = TRUE, plot = FALSE)
   expect_equal(terra::nlyr(r2), 2)
 })
+
+test_that("sp.Tri2Shape does not require rgeos", {
+  tri <- list(
+    T = matrix(c(1, 2, 3), nrow = 1),
+    P = matrix(c(0, 0, 1, 0, 0, 1), ncol = 2, byrow = TRUE)
+  )
+  shp <- sp.Tri2Shape(tri, dbf = data.frame(ID = 1), crs = NULL)
+  expect_true(inherits(shp, "SpatialPolygonsDataFrame"))
+  expect_equal(nrow(shp), 1)
+  expect_true("Area" %in% names(shp@data))
+  expect_equal(as.numeric(shp@data$Area), 0.5, tolerance = 1e-8)
+})

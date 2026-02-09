@@ -87,21 +87,30 @@ sp.Tri2Shape <- function(tri, dbf=NULL, crs=NA){
   ncell = nrow(ta)
   p.x = pt[,1]
   p.y = pt[,2]
-  ipt = t (ta[,c(1:3,1)] )
-  xp = matrix( p.x[ipt], nrow=4)
-  yp = matrix( p.y[ipt], nrow=4)
-  s.tri=matrix(paste(as.numeric(xp), as.numeric(yp)), nrow=4)
-  str=paste('GEOMETRYCOLLECTION(', 
-            paste(
-              paste('POLYGON((',apply(s.tri, 2, paste, collapse=','),'))'),
-              collapse = ','),
-            ')')
-  SRL = rgeos::readWKT(str)
-  ia=rgeos::gArea(SRL, byid = TRUE)
-  dbf=cbind(dbf, 'Area'=ia)
-  ret = sp::SpatialPolygonsDataFrame(Sr=SRL, data=as.data.frame(dbf), match.ID = FALSE)
-  if(!is.na(crs) ){
-    raster::crs(ret) = crs
+
+  ipt = t(ta[,c(1:3,1)])
+  xp = matrix(p.x[ipt], nrow = 4)
+  yp = matrix(p.y[ipt], nrow = 4)
+
+  if (is.null(dbf)) {
+    dbf = data.frame('ID' = seq_len(ncell))
   }
-  ret
+  dbf = as.data.frame(dbf)
+
+  crs_sf <- sf::NA_crs_
+  if (!is.null(crs) && !(is.atomic(crs) && length(crs) == 1 && is.na(crs))) {
+    crs_sf <- .rshud_as_crs(crs)
+  }
+
+  polys <- lapply(seq_len(ncell), function(i) {
+    ring <- cbind(as.numeric(xp[, i]), as.numeric(yp[, i]))
+    sf::st_polygon(list(ring))
+  })
+  geom <- sf::st_sfc(polys, crs = crs_sf)
+  sf_obj <- sf::st_sf(dbf, geometry = geom)
+
+  sf_obj$Area <- as.numeric(sf::st_area(sf_obj))
+
+  ret <- methods::as(sf_obj, "Spatial")
+  return(ret)
 }
