@@ -23,11 +23,9 @@ Imports: Rcpp,
   xts, 
   hydroGOF,
   zoo,
-  raster (>= 2.1.0), 
-  sp, 
-  rgeos, 
+  sf,
+  terra,
   RTriangle,
-  proj4,
   gstat,
   abind,
   utils,
@@ -35,15 +33,19 @@ Imports: Rcpp,
   doParallel,
   geometry,
   methods
-LinkingTo: Rcpp, sp
+LinkingTo: Rcpp
 RoxygenNote: 7.2.1
 Remotes: shulele/RTriangle/pkg
 Suggests: testthat,
     knitr,
     rmarkdown,
-    terra,
   deldir,
   interp,
   whitebox,
-  ncdf4
+  ncdf4,
+  sp,
+  raster,
+  rgdal,
+  rgeos,
+  proj4
 VignetteBuilder: knitr
