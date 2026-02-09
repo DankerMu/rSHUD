@@ -7,31 +7,32 @@
 #' @examples
 #' crs.Albers(ext=c(90, 100, 35, 40))
 crs.Albers <- function(spx, ext=NULL){
-  if(is.null(ext)){
-    crs0 = sp::CRS('+init=epsg:4326')
-    sp.gcs = sp::spTransform(spx, crs0)
-    ext= raster::extent(sp.gcs)
+  if (is.null(ext)) {
+    if (missing(spx) || is.null(spx)) stop("crs.Albers: require spx or ext")
+    sp_sf <- .rshud_as_sf(spx)
+    sp_gcs <- sf::st_transform(sp_sf, 4326)
+    bb <- sf::st_bbox(sp_gcs)
+    ext <- c(bb[["xmin"]], bb[["xmax"]], bb[["ymin"]], bb[["ymax"]])
   }
-  x0 = round(mean(ext[1:2]), 1)
-  y0 = round(mean(ext[1:2+2]), 1)
-  dx = round(diff(ext[1:2]), 2)
-  dy = round(diff(ext[1:2+2]), 2)
-  if(dx < 1){
-    my = 0.25
-  }else{
-    my=round(dy/4, 2)
-  }
-  lat1 = y0 + my
-  lat2 = y0 - my
-  str = paste0(' +proj=', 'aea',
-               ' +lat_1=', lat1,
-               ' +lat_2=', lat2,
-               ' +lon_0=', x0,
-               ' +datum=', 'WGS84',
-               " +units=", "m"
+
+  x0 <- round(mean(ext[1:2]), 1)
+  y0 <- round(mean(ext[3:4]), 1)
+  dx <- round(diff(ext[1:2]), 2)
+  dy <- round(diff(ext[3:4]), 2)
+  my <- if (dx < 1) 0.25 else round(dy / 4, 2)
+
+  lat1 <- y0 + my
+  lat2 <- y0 - my
+  str <- paste0(
+    " +proj=aea",
+    " +lat_1=", lat1,
+    " +lat_2=", lat2,
+    " +lon_0=", x0,
+    " +datum=WGS84",
+    " +units=m"
   )
   print(str)
-  ret = sp::CRS(str)
+  ret <- sf::st_crs(str)
   return(ret)
 }
 #' Build a Lambert Equal Area projection based on the spatial data or extent.
@@ -43,21 +44,24 @@ crs.Albers <- function(spx, ext=NULL){
 #' @examples
 #' crs.Lambert(ext=c(90, 100, 35, 40))
 crs.Lambert <- function(spx, ext=NULL){
-  if(is.null(ext)){
-    crs0 = sp::CRS('+init=epsg:4326')
-    sp.gcs = sp::spTransform(spx, crs0)
-    ext= raster::extent(sp.gcs)
+  if (is.null(ext)) {
+    if (missing(spx) || is.null(spx)) stop("crs.Lambert: require spx or ext")
+    sp_sf <- .rshud_as_sf(spx)
+    sp_gcs <- sf::st_transform(sp_sf, 4326)
+    bb <- sf::st_bbox(sp_gcs)
+    ext <- c(bb[["xmin"]], bb[["xmax"]], bb[["ymin"]], bb[["ymax"]])
   }
-  x0 = round(mean(ext[1:2]), 1)
-  y0 = round(mean(ext[1:2+2]), 1)
-  dx = round(diff(ext[1:2]), 2)
-  dy = round(diff(ext[1:2+2]), 2)
-  
-  ret = sp::CRS(paste0('+proj=', 'leac',
-                       ' +lat_1=', y0,
-                       ' +lon_0=', x0,
-                       ' +datum=', 'WGS84',
-                       " +units=", "m"))
+
+  x0 <- round(mean(ext[1:2]), 1)
+  y0 <- round(mean(ext[3:4]), 1)
+
+  ret <- sf::st_crs(paste0(
+    "+proj=leac",
+    " +lat_1=", y0,
+    " +lon_0=", x0,
+    " +datum=WGS84",
+    " +units=m"
+  ))
   return(ret)
 }
 
@@ -93,14 +97,13 @@ crs.long2utm <- function(lon, lat=30){
   }else{
     zid =crs.long2utmZone(lon)
     if(lat>=0){
-      str = paste0('+proj=utm +zone=', zid, ' +datum=WGS84 +units=m +no_defs')
+      str = paste0("+proj=utm +zone=", zid, " +datum=WGS84 +units=m +no_defs")
     }else{
-      str = paste0('+proj=utm +zone=', zid, ' +south +datum=WGS84 +units=m +no_defs')
+      str = paste0("+proj=utm +zone=", zid, " +south +datum=WGS84 +units=m +no_defs")
     }
-    x = sp::CRS(str)
+    x = sf::st_crs(str)
   }
   return(x)
 }
-
 
 

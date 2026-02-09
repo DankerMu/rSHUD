@@ -123,55 +123,71 @@ readnc<-function(ncid, varid=NULL,  ext = NULL){
 #' @param Dxy Resolution
 #' @param flip Whether flip the matrix.
 #' @param plot Whether plot the raster.
-#' @return a Raster/RasterStack
+#' @return a SpatRaster
 #' @export
 xyz2Raster <- function(x, y=NULL, arr=NULL,Dxy=NULL,
                        flip=TRUE, plot=TRUE){
-  if(is.null(y) | is.null(arr)){
-    nc = x;
-  }else{
-    nc = list(x=x, y=y, arr=arr)
+  if (is.null(y) || is.null(arr)) {
+    nc <- x
+  } else {
+    nc <- list(x = x, y = y, arr = arr)
   }
-  dims = dim(nc$arr)
-  ndims = length(dims)
-  x = nc$x; y = nc$y
-  
-  if(is.null(Dxy) & (length(x) == 1 | length(y) == 1) ){
-    message('Dxy cannot be NULL. Dxy MUST be given.')
-    stop()
+  dims <- dim(nc$arr)
+  ndims <- length(dims)
+  x <- nc$x
+  y <- nc$y
+
+  if (is.null(Dxy) && (length(x) == 1 || length(y) == 1)) {
+    stop("xyz2Raster: Dxy cannot be NULL when x or y length is 1")
   }
-  
-  if( ndims > 2){
-    # multiple layers
-    rl = list()
-    for(i in 1:dims[3]){
-      rl[[i]] = xyz2Raster(x = x, y = y, Dxy=Dxy,
-                           arr=matrix(nc$arr[, , i], nrow=dim(nc$arr)[1], ncol=dim(nc$arr)[2]) )
+
+  if (ndims > 2) {
+    rl <- vector("list", dims[3])
+    for (i in seq_len(dims[3])) {
+      rl[[i]] <- xyz2Raster(
+        x = x,
+        y = y,
+        Dxy = Dxy,
+        arr = matrix(nc$arr[, , i], nrow = dim(nc$arr)[1], ncol = dim(nc$arr)[2]),
+        flip = flip,
+        plot = FALSE
+      )
     }
-    rs = raster::stack(rl)
-  }else{
-    # single layer
-    # val = matrix(arr, nrow=nrow(arr), ncol=ncol(arr))
-    val = arr
-    if(!is.null(Dxy)){
-      dx = Dxy[1]
-      if(length(Dxy)==1){
-        dy = Dxy[1]
-      }else{
-        dy = Dxy[2]
-      }
-    }else{
-      dx = abs(mean(diff(x)));
-      dy = abs(mean(diff(y)))
+    rs <- terra::rast(rl)
+    dn <- dimnames(nc$arr)
+    if (!is.null(dn) && length(dn) >= 3 && !is.null(dn[[3]])) names(rs) <- dn[[3]]
+  } else {
+    val <- arr
+
+    if (!is.null(Dxy)) {
+      dx <- Dxy[1]
+      dy <- if (length(Dxy) == 1) Dxy[1] else Dxy[2]
+    } else {
+      dx <- abs(mean(diff(x)))
+      dy <- abs(mean(diff(y)))
     }
-    nx = length(x);   ny = length(y)
-    r = raster::raster(ncols=nx, nrows=ny)
-    raster::extent(r) = c(min(x), max(x), min(y), max(y)) + c(-dx, dx, -dy, dy)/2
-    # raster::res(r) = c(dx, dy)
-    # r = raster::setValues(r, t(val[, ny:1]))
-    if(flip){    idx = ny:1
-    }else{    idx = 1:ny  }
-    rs = raster::setValues(r, t(val[, idx ]) )
+
+    nx <- length(x)
+    ny <- length(y)
+    if (flip) {
+      idx <- ny:1
+    } else {
+      idx <- 1:ny
+    }
+
+    mat <- t(val[, idx])
+    rs <- terra::rast(mat)
+    terra::ext(rs) <- terra::ext(
+      min(x) - dx / 2,
+      max(x) + dx / 2,
+      min(y) - dy / 2,
+      max(y) + dy / 2
+    )
   }
+
+  if (isTRUE(plot)) {
+    terra::plot(rs)
+  }
+
   rs
 }

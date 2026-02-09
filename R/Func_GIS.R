@@ -13,40 +13,32 @@
 #' writeshape(sp1, file=file.path(tempdir(), 'sp1'))
 #' sp2=readOGR(file.path(tempdir(), 'sp1.shp'))
 #' plot(sp2)
-writeshape <- function(shp, file=NULL, crs = raster::crs(shp)){
-  msg='writeshape::'
-  if(tolower(raster::extension(file)) == '.shp'){
-    file = substr(file, 1, nchar(file)-4)
+writeshape <- function(shp, file = NULL, crs = NULL) {
+  msg = "writeshape::"
+
+  if (is.null(file) || !nzchar(file)) {
+    return(invisible(NULL))
   }
-  if(grepl(class(shp)[1],'SpatialPolygons' ) ){
-    # shp = methods::as(shp, "SpatialPolygonsDataFrame")
-    shp=sp::SpatialPolygonsDataFrame(shp, 
-                                     data=data.frame('ID'=1:length(shp)),
-                                     match.ID = FALSE)
-  }else if ( grepl(class(shp)[1],'SpatialLines' )   ){
-    # shp = methods::as(shp, "SpatialLinesDataFrame")
-    shp=sp::SpatialLinesDataFrame(shp, data=data.frame('ID'=1:length(shp)),match.ID = FALSE)
+  if (tolower(tools::file_ext(file)) == "shp") {
+    file <- sub("\\.[Ss][Hh][Pp]$", "", file)
   }
-  if( is.null(file) ){
-    # message(msg, 'No file exported')
-  }else{
-    path = dirname(file)
-    fn = basename(file)
-    if(!dir.exists(path)){
-      dir.create(path, showWarnings = T, recursive = T)
-    }
-    raster::crs(shp) = crs;
-    prj = sp::proj4string(shp)
-    rgdal::writeOGR(obj=shp, driver = 'ESRI Shapefile',
-                    layer=fn,
-                    dsn=path, overwrite_layer = T)
-    if( !is.na(crs) ){
-      fn.prj = file;
-      raster::extension(fn.prj) = '.prj'
-      invisible(rgdal::showWKT(prj, file = fn.prj))
-    }
-    message(msg, file, ' is saved')
+
+  path <- dirname(file)
+  fn <- basename(file)
+  if (!dir.exists(path)) {
+    dir.create(path, showWarnings = FALSE, recursive = TRUE)
   }
+
+  v <- .rshud_as_spatvector(shp, crs = crs)
+  val <- tryCatch(terra::values(v, dataframe = TRUE), error = function(e) NULL)
+  if (is.null(val) || ncol(val) == 0) {
+    terra::values(v) <- data.frame(ID = seq_len(nrow(v)))
+  }
+
+  out <- file.path(path, paste0(fn, ".shp"))
+  terra::writeVector(v, out, overwrite = TRUE)
+  message(msg, out, " is saved")
+  invisible(out)
 }
 #' Re-project coordinates betwen GCS and PCS
 #' \code{ProjectCoordinate} 
@@ -56,13 +48,20 @@ writeshape <- function(shp, file=NULL, crs = raster::crs(shp)){
 #' @return Basic model infomation, figures and tables
 #' @export
 ProjectCoordinate <- function(x, proj4string, P2G=TRUE){
-  # Transformed data
-  x=as.matrix(x)
-  y <- proj4::project(x, proj4string, inverse=P2G)
-  if(P2G){
-    colnames(y)=c('Lon','Lat')
-  }else{
-    colnames(y)=c('X','Y')
+  x <- as.matrix(x)
+  if (ncol(x) != 2) stop("ProjectCoordinate: x must be a 2-column matrix")
+
+  crs_out <- .rshud_as_crs(proj4string)
+  if (P2G) {
+    pts <- sf::st_as_sf(data.frame(X = x[, 1], Y = x[, 2]), coords = c("X", "Y"), crs = crs_out)
+    pts <- sf::st_transform(pts, 4326)
+    y <- sf::st_coordinates(pts)
+    colnames(y) <- c("Lon", "Lat")
+  } else {
+    pts <- sf::st_as_sf(data.frame(Lon = x[, 1], Lat = x[, 2]), coords = c("Lon", "Lat"), crs = 4326)
+    pts <- sf::st_transform(pts, crs_out)
+    y <- sf::st_coordinates(pts)
+    colnames(y) <- c("X", "Y")
   }
   y
 }
@@ -215,31 +214,45 @@ MeshData2Raster <- function(x=getElevation(),
 #' plot(sp)
 #' plot(s)
 removeholes <- function(sp){
-  x = sp
-  nx = length(x)
-  # vn = rownames(x@data)
-  rl = list()
-  for(i in 1:nx){
-    spg = x@polygons[[i]]@Polygons
-    npg = length(spg)
-    ypg = list()
-    k=1
-    for(j in 1:npg){
-      if(spg[[j]]@hole){
-      }else{
-        ypg[[k]] = spg[[j]]
-        k = k+1
+  if (inherits(sp, "SpatVector")) {
+    x_sf <- sf::st_as_sf(sp)
+    y_sf <- removeholes(x_sf)
+    return(terra::vect(y_sf))
+  }
+
+  if (inherits(sp, "sf") || inherits(sp, "sfc")) {
+    x_sf <- if (inherits(sp, "sf")) sp else sf::st_sf(geometry = sp)
+    geom <- sf::st_geometry(x_sf)
+    new_geom <- sf::st_sfc(lapply(geom, .rshud_geom_drop_holes), crs = sf::st_crs(x_sf))
+    if (inherits(sp, "sfc")) return(new_geom)
+    x_sf$geometry <- new_geom
+    return(x_sf)
+  }
+
+  if (inherits(sp, "SpatialPolygons") || inherits(sp, "SpatialPolygonsDataFrame")) {
+    x <- sp
+    nx <- length(x)
+    rl <- vector("list", nx)
+    for (i in seq_len(nx)) {
+      spg <- x@polygons[[i]]@Polygons
+      npg <- length(spg)
+      ypg <- list()
+      k <- 1
+      for (j in seq_len(npg)) {
+        if (!spg[[j]]@hole) {
+          ypg[[k]] <- spg[[j]]
+          k <- k + 1
+        }
       }
+      rl[[i]] <- sp::Polygons(ypg, ID = as.character(i))
     }
-    rl[[i]] = sp::Polygons(ypg, ID=i)
+    ret <- sp::SpatialPolygons(rl)
+    crs0 <- tryCatch(sp::proj4string(x), error = function(e) NA_character_)
+    if (!is.na(crs0) && nzchar(crs0)) sp::proj4string(ret) <- crs0
+    return(ret)
   }
-  ysp = sp::SpatialPolygons(rl)
-  # ret = SpatialPolygonsDataFrame(ysp, data=x@data)
-  ret = ysp
-  if( !is.na(raster::crs(x)) & ! is.null(raster::crs(x)) ){
-    raster::crs(ret) = raster::crs(x)
-  }
-  return(ret)
+
+  stop("removeholes: unsupported input type: ", paste(class(sp), collapse = "/"))
 }
 #' Generatue fishnet
 #' \code{fishnet} Generate fishnet by the coordinates
@@ -263,60 +276,110 @@ removeholes <- function(sp){
 #' plot(sp3, axes=TRUE, add=TRUE, col=3, pch=20)
 #' grid()
 fishnet <- function(xx, yy,
-                    crs=sp::CRS("+init=epsg:4326"),
-                    type='polygon'){
-  nx = length(xx)
-  ny = length(yy)
-  if(grepl('line', tolower(type)) ){
-    ymin = min(yy); ymax = max(yy)
-    xmin = min(xx); xmax = max(xx)
-    vline=cbind(xx, ymin, xx, ymax)
-    hline =  cbind(xmin, yy, xmax, yy)
-    mat = rbind(vline, hline)
-    str=paste(paste('(', mat[,1], mat[,2],',', mat[,3], mat[,4], ')'), collapse = ',')
-    spl=rgeos::readWKT(paste('MULTILINESTRING(', str, ')'))
-    df = as.data.frame(mat)
-    colnames(df) = c('x1', 'y1', 'x2','y2')
-    spdf=sp::SpatialLinesDataFrame(spl, data = df)
-    ret = spdf
+                    crs = 4326,
+                    type = "polygon") {
+  type0 <- tolower(type)
+  crs_sf <- .rshud_as_crs(crs)
+  xx <- as.numeric(xx)
+  yy <- as.numeric(yy)
+  if (length(xx) == 0 || length(yy) == 0) stop("fishnet: xx/yy cannot be empty")
+
+  if (grepl("line", type0)) {
+    ymin <- min(yy)
+    ymax <- max(yy)
+    xmin <- min(xx)
+    xmax <- max(xx)
+
+    n <- length(xx) + length(yy)
+    geoms <- vector("list", n)
+    x1 <- numeric(n)
+    y1 <- numeric(n)
+    x2 <- numeric(n)
+    y2 <- numeric(n)
+
+    k <- 1
+    for (i in seq_along(xx)) {
+      x1[[k]] <- xx[[i]]
+      y1[[k]] <- ymin
+      x2[[k]] <- xx[[i]]
+      y2[[k]] <- ymax
+      geoms[[k]] <- sf::st_linestring(matrix(c(x1[[k]], y1[[k]], x2[[k]], y2[[k]]), ncol = 2, byrow = TRUE))
+      k <- k + 1
+    }
+    for (j in seq_along(yy)) {
+      x1[[k]] <- xmin
+      y1[[k]] <- yy[[j]]
+      x2[[k]] <- xmax
+      y2[[k]] <- yy[[j]]
+      geoms[[k]] <- sf::st_linestring(matrix(c(x1[[k]], y1[[k]], x2[[k]], y2[[k]]), ncol = 2, byrow = TRUE))
+      k <- k + 1
+    }
+
+    df <- data.frame(x1 = x1, y1 = y1, x2 = x2, y2 = y2)
+    return(sf::st_sf(df, geometry = sf::st_sfc(geoms, crs = crs_sf)))
   }
-  if(grepl('polygon', tolower(type)) ){
-    xy=expand.grid(xx,yy)
-    xm = matrix(xy[,1], nx,ny)
-    ym = matrix(xy[,2], nx, ny)
-    xloc=abind::abind(as.matrix(xm[-nx, -ny]), as.matrix(xm[-nx, -1]), as.matrix(xm[-1, -1]),
-                      as.matrix(xm[-1, -ny]), as.matrix(xm[-nx, -ny]), along=3)
-    yloc=abind::abind(as.matrix(ym[-nx, -ny]), as.matrix(ym[-nx, -1]), as.matrix(ym[-1, -1]),
-                      as.matrix(ym[-1, -ny]), as.matrix(ym[-nx, -ny]), along=3)
-    
-    # df=as.data.frame(matrix(0, nrow=(nx-1)*(ny-1), 6))
-    df=data.frame(as.numeric(apply(xloc, 1:2, min)),
-                  as.numeric(apply(xloc, 1:2, max)),
-                  as.numeric(apply(yloc, 1:2, min)),
-                  as.numeric(apply(yloc, 1:2, max)))
-    df = data.frame(df, rowMeans(df[,1:2]), rowMeans(df[,1:2+2]) )
-    colnames(df) = c('xmin','xmax','ymin', 'ymax','xcenter','ycenter')
-    str=paste('GEOMETRYCOLLECTION(',
-              paste(paste('POLYGON((',
-                          paste(xm[-nx, -ny], ym[-nx, -ny], ',' ),
-                          paste(xm[-nx, -1],  ym[-nx, -1], ','),
-                          paste(xm[-1, -1],   ym[-1, -1], ','),
-                          paste(xm[-1, -ny],  ym[-1, -ny], ','),
-                          paste(xm[-nx, -ny], ym[-nx, -ny], '' ), '))' )
-                    , collapse =','),
-              ')' )
-    # str=paste('MULTIPOLYGON(', paste(xt, collapse = ', '), ')')
-    SRL = rgeos::readWKT(str)
-    # x1 = x0@polygons[[1]]@Polygons
-    # SRL =lapply(1:length(x1),  function(x, i) {Polygons(list(x[[i]]), ID=i)},  x=x1 )
-    ret = sp::SpatialPolygonsDataFrame( Sr=SRL, data=df, match.ID = TRUE)
+
+  if (grepl("point", type0)) {
+    xm <- expand.grid(X = xx, Y = yy)
+    ret <- sf::st_as_sf(xm, coords = c("X", "Y"), crs = crs_sf, remove = FALSE)
+    return(ret)
   }
-  if(grepl('point', tolower(type)) ){
-    xm = expand.grid(xx, yy)
-    df = data.frame('X' = xm[, 1], 'Y' = xm[,2])
-    ret = sp::SpatialPointsDataFrame(coords = df, data=df, match.ID = TRUE)
+
+  if (!grepl("polygon", type0)) stop("fishnet: type must be polygon|point|line")
+
+  xx <- sort(unique(xx))
+  yy <- sort(unique(yy))
+  nx <- length(xx)
+  ny <- length(yy)
+  if (nx < 2 || ny < 2) stop("fishnet: polygon requires at least 2 x and 2 y values")
+
+  ncell <- (nx - 1) * (ny - 1)
+  geoms <- vector("list", ncell)
+  xmin <- numeric(ncell)
+  xmax <- numeric(ncell)
+  ymin <- numeric(ncell)
+  ymax <- numeric(ncell)
+  xcenter <- numeric(ncell)
+  ycenter <- numeric(ncell)
+
+  k <- 1
+  for (i in seq_len(nx - 1)) {
+    for (j in seq_len(ny - 1)) {
+      xi1 <- xx[[i]]
+      xi2 <- xx[[i + 1]]
+      yj1 <- yy[[j]]
+      yj2 <- yy[[j + 1]]
+
+      xmin[[k]] <- min(xi1, xi2)
+      xmax[[k]] <- max(xi1, xi2)
+      ymin[[k]] <- min(yj1, yj2)
+      ymax[[k]] <- max(yj1, yj2)
+      xcenter[[k]] <- (xmin[[k]] + xmax[[k]]) / 2
+      ycenter[[k]] <- (ymin[[k]] + ymax[[k]]) / 2
+
+      coords <- matrix(
+        c(xmin[[k]], ymin[[k]],
+          xmin[[k]], ymax[[k]],
+          xmax[[k]], ymax[[k]],
+          xmax[[k]], ymin[[k]],
+          xmin[[k]], ymin[[k]]),
+        ncol = 2,
+        byrow = TRUE
+      )
+      geoms[[k]] <- sf::st_polygon(list(coords))
+      k <- k + 1
+    }
   }
-  raster::crs(ret) = crs
+
+  df <- data.frame(
+    xmin = xmin,
+    xmax = xmax,
+    ymin = ymin,
+    ymax = ymax,
+    xcenter = xcenter,
+    ycenter = ycenter
+  )
+  ret <- sf::st_sf(df, geometry = sf::st_sfc(geoms, crs = crs_sf))
   return(ret)
 }
 
@@ -651,41 +714,109 @@ voronoipolygons = function(x, pts = x@coords, rw=NULL, crs=NULL) {
 #' @param enlarge enlarge factor for the boundary.
 #' @return ShapePolygon*
 #' @export
-ForcingCoverage <- function(sp.meteoSite=NULL, filenames=paste0(sp.meteoSite@data$ID, '.csv'),
-                            pcs, gcs=sp::CRS('+init=epsg:4326'), 
-                            dem, wbd, enlarge = 10000
-                            ){
-  if( is.null(sp.meteoSite) ){
-    sp.meteoSite = rgeos::gCentroid(wbd)
+ForcingCoverage <- function(
+  sp.meteoSite = NULL,
+  filenames = NULL,
+  pcs,
+  gcs = 4326,
+  dem,
+  wbd,
+  enlarge = 10000
+) {
+  msg <- "ForcingCoverage::"
+
+  if (missing(pcs) || is.null(pcs)) stop(msg, "pcs is required")
+  if (missing(wbd) || is.null(wbd)) stop(msg, "wbd is required")
+
+  pcs_crs <- .rshud_as_crs(pcs)
+  gcs_crs <- .rshud_as_crs(gcs)
+
+  wbd_sf <- .rshud_as_sf(wbd)
+  wbd_pcs <- sf::st_transform(wbd_sf, pcs_crs)
+
+  sites_pcs <- NULL
+  if (is.null(sp.meteoSite)) {
+    sites_pcs <- sf::st_sf(geometry = sf::st_centroid(sf::st_union(wbd_pcs)))
+  } else {
+    sites_sf <- .rshud_as_sf(sp.meteoSite)
+    sites_pcs <- sf::st_transform(sites_sf, pcs_crs)
   }
-  x.pcs = sp::spTransform(sp.meteoSite, pcs)
-  x.gcs = sp::spTransform(sp.meteoSite, gcs)
-  
-  ll = sp::coordinates(x.gcs)
-  xy = sp::coordinates(x.pcs)
-  z = raster::extract(dem, x.pcs)
-  
-  att = data.frame(1:length(sp.meteoSite), ll, xy, z, filenames)
-  colnames(att) = c('ID', 'Lon', 'Lat', 'X', 'Y','Z', 'Filename')
-  
-  e1 = raster::extent(wbd)
-  e2 = raster::extent(x.pcs)
-  rw = c(min(e1[1], e2[1]), 
-         max(e1[2], e2[2]),
-         min(e1[3], e2[3]),
-         max(e1[4], e2[4]) ) 
-  if(is.null(enlarge)){
-    enlarge = min(diff(rw[1:2]), diff(rw[3:4])) * 0.02
+  sites_pcs <- sf::st_cast(sites_pcs, "POINT", warn = FALSE)
+
+  sites_gcs <- sf::st_transform(sites_pcs, gcs_crs)
+  ll <- sf::st_coordinates(sites_gcs)
+  xy <- sf::st_coordinates(sites_pcs)
+
+  n <- nrow(xy)
+  if (n == 0) stop(msg, "No forcing sites")
+
+  z <- rep(NA_real_, n)
+  if (!missing(dem) && !is.null(dem)) {
+    r <- terra::rast(dem)
+    pts_v <- terra::vect(sites_pcs)
+    ex <- terra::extract(r, pts_v)
+    if (!is.null(ex) && ncol(ex) >= 2) z <- as.numeric(ex[[2]])
   }
-  rw = rw + c(-1, 1, -1, 1) * enlarge
-  if(length(x.pcs)<2){
-    sp.forc = fishnet(xx = rw[1:2],yy = rw[3:4], crs=pcs)
-  }else{
-    sp.forc=voronoipolygons(x=x.pcs, rw=rw, crs=pcs)
+
+  if (is.null(filenames)) {
+    id_for_files <- NULL
+    if (!is.null(sp.meteoSite)) {
+      if (inherits(sp.meteoSite, "sf") && "ID" %in% names(sp.meteoSite)) {
+        id_for_files <- sp.meteoSite$ID
+      } else if (inherits(sp.meteoSite, "SpatVector")) {
+        vals <- tryCatch(terra::values(sp.meteoSite, dataframe = TRUE), error = function(e) NULL)
+        if (!is.null(vals) && "ID" %in% names(vals)) id_for_files <- vals$ID
+      } else if (any(grepl("^Spatial", class(sp.meteoSite)))) {
+        if (requireNamespace("sp", quietly = TRUE)) {
+          id_for_files <- tryCatch(sp.meteoSite@data$ID, error = function(e) NULL)
+        }
+      }
+    }
+    if (is.null(id_for_files) || length(id_for_files) != n) id_for_files <- seq_len(n)
+    filenames <- paste0(id_for_files, ".csv")
   }
-  att[is.na(att)] = -9999
-  sp.forc@data = att
-  return(sp.forc)
+  if (length(filenames) != n) stop(msg, "filenames must have length ", n)
+
+  att <- data.frame(
+    ID = seq_len(n),
+    Lon = ll[, 1],
+    Lat = ll[, 2],
+    X = xy[, 1],
+    Y = xy[, 2],
+    Z = z,
+    Filename = filenames
+  )
+  att[is.na(att)] <- -9999
+
+  bbox_w <- sf::st_bbox(wbd_pcs)
+  bbox_s <- sf::st_bbox(sites_pcs)
+  rw <- c(
+    min(bbox_w[["xmin"]], bbox_s[["xmin"]]),
+    max(bbox_w[["xmax"]], bbox_s[["xmax"]]),
+    min(bbox_w[["ymin"]], bbox_s[["ymin"]]),
+    max(bbox_w[["ymax"]], bbox_s[["ymax"]])
+  )
+
+  if (is.null(enlarge)) {
+    enlarge <- min(diff(rw[1:2]), diff(rw[3:4])) * 0.02
+  }
+  rw <- rw + c(-1, 1, -1, 1) * enlarge
+
+  cover <- NULL
+  if (n < 2) {
+    cover <- fishnet(xx = rw[1:2], yy = rw[3:4], crs = pcs_crs, type = "polygon")
+  } else {
+    pts_v <- terra::vect(sites_pcs)
+    terra::values(pts_v) <- data.frame(site_index = seq_len(n))
+    vor <- terra::voronoi(pts_v, bnd = terra::ext(rw[1], rw[2], rw[3], rw[4]))
+    cover <- sf::st_as_sf(vor)
+    cover <- cover[order(cover$site_index), , drop = FALSE]
+  }
+
+  if (nrow(cover) != n) stop(msg, "Coverage polygons count mismatch: ", nrow(cover), " vs ", n)
+  out <- sf::st_sf(att, geometry = sf::st_geometry(cover))
+  sf::st_crs(out) <- pcs_crs
+  return(out)
 }
 
 #' Find the subset of a extent in a grid.
@@ -746,56 +877,58 @@ grid.subset <- function(ext, res,
 #' raster::plot(sp3, add=TRUE, pch=1, cex=2)
 #' 
 xy2shp <- function(xy, df=NULL, crs=NULL, shape='points'){
-  if(grepl('point', tolower(shape))){
-    if(!is.list(xy)){
-      xy = list(xy)
-    }
-    xy = do.call(rbind, xy)
-    if(is.null(df)){
-      df = data.frame('ID'= 1:nrow(xy))
-    }
-    s1= paste0('POINT(', paste(xy[,1], xy[,2]), ')' )
-    s2= paste('GEOMETRYCOLLECTION(', paste(s1, collapse = ','), ')')
-    sp.xy=rgeos::readWKT(s2)
-    spd=sp::SpatialPointsDataFrame(sp.xy, data=df, match.ID = FALSE)
-  }else if(grepl('line', tolower(shape))){
-    if(!is.list(xy)){
-      xy = list(xy)
-    }
-    if(is.null(df)){
-      df = data.frame('ID'= 1:length(xy))
-    }
-    nl = length(xy)
-    fx <- function(x){
-      # x=rbind(x, x[1, ])
-      paste0('(', paste(paste(x[,1], x[,2]), collapse = ','), ')')
-    }
-    s1 = paste0('LINESTRING', unlist(lapply(xy, FUN = fx)), '')
-    s2= paste('GEOMETRYCOLLECTION(', paste(s1, collapse = ','), ')')
-    sp.xy=rgeos::readWKT(s2)
-    
-    spd=sp::SpatialLinesDataFrame(sp.xy, data=df, match.ID = FALSE)
-  }else if(grepl('polygon', tolower(shape))){
-    if(!is.list(xy)){
-      xy = list(xy)
-    }
-    if(is.null(df)){
-      df = data.frame('ID'= 1:length(xy))
-    }
-    nl = length(xy)
-    fx <- function(x){
-      x=rbind(x, x[1, ])
-      paste0('(', paste(paste(x[,1], x[,2]), collapse = ','), ')')
-    }
-    s1 = paste0('POLYGON(', unlist(lapply(xy, FUN = fx)), ')')
-    s2= paste('GEOMETRYCOLLECTION(', paste(s1, collapse = ','), ')')
-    sp.xy=rgeos::readWKT(s2)
-    
-    spd=sp::SpatialPolygonsDataFrame(sp.xy, data=df, match.ID = FALSE)
-  }
-  if(!is.null(crs)){
-    raster::crs(spd)=crs
-  }
-  return(spd)
-}
+  shape0 <- tolower(shape)
+  crs_sf <- if (is.null(crs)) sf::NA_crs_ else .rshud_as_crs(crs)
 
+  xy_list <- if (is.list(xy)) xy else list(xy)
+
+  if (grepl("point", shape0)) {
+    coords <- do.call(rbind, xy_list)
+    coords <- as.matrix(coords)
+    if (ncol(coords) != 2) stop("xy2shp: points require 2 columns (x,y)")
+
+    if (is.null(df)) df <- data.frame(ID = seq_len(nrow(coords)))
+    if (nrow(df) != nrow(coords)) stop("xy2shp: df row count must match points")
+
+    geom <- sf::st_sfc(
+      lapply(seq_len(nrow(coords)), function(i) sf::st_point(as.numeric(coords[i, 1:2]))),
+      crs = crs_sf
+    )
+    return(sf::st_sf(df, geometry = geom))
+  }
+
+  if (grepl("line", shape0)) {
+    if (is.null(df)) df <- data.frame(ID = seq_len(length(xy_list)))
+    if (nrow(df) != length(xy_list)) stop("xy2shp: df row count must match lines")
+
+    geom <- sf::st_sfc(
+      lapply(xy_list, function(m) {
+        m <- as.matrix(m)
+        if (ncol(m) != 2) stop("xy2shp: lines require 2 columns (x,y)")
+        sf::st_linestring(m[, 1:2, drop = FALSE])
+      }),
+      crs = crs_sf
+    )
+    return(sf::st_sf(df, geometry = geom))
+  }
+
+  if (grepl("polygon", shape0)) {
+    if (is.null(df)) df <- data.frame(ID = seq_len(length(xy_list)))
+    if (nrow(df) != length(xy_list)) stop("xy2shp: df row count must match polygons")
+
+    geom <- sf::st_sfc(
+      lapply(xy_list, function(m) {
+        m <- as.matrix(m)
+        if (ncol(m) != 2) stop("xy2shp: polygons require 2 columns (x,y)")
+        ring <- m[, 1:2, drop = FALSE]
+        if (nrow(ring) < 3) stop("xy2shp: polygon ring must have >= 3 points")
+        if (!all(ring[1, ] == ring[nrow(ring), ])) ring <- rbind(ring, ring[1, ])
+        sf::st_polygon(list(ring))
+      }),
+      crs = crs_sf
+    )
+    return(sf::st_sf(df, geometry = geom))
+  }
+
+  stop("xy2shp: shape must be points|lines|polygon")
+}

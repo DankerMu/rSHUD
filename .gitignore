@@ -13,3 +13,10 @@ Rplots.pdf
 test*.R
 test2*.R
 nosync
+
+# Keep testthat tests tracked (override the broad test*.R ignore)
+!tests/testthat.R
+!tests/testthat/test-*.R
+
+# R CMD check artifacts
+..Rcheck/
