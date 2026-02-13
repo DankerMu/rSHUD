@@ -39,6 +39,7 @@ Remotes: shulele/RTriangle/pkg
 Suggests: testthat,
     knitr,
     rmarkdown,
+    RANN,
   deldir,
   interp,
   whitebox,
