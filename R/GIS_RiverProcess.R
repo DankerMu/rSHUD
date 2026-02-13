@@ -205,6 +205,7 @@ NodeIDList <- function(sp, coord = extractCoords(sp, unique = TRUE) ){
 #' @return FROM and TO nodes index of the SpatialLines
 #' @export
 FromToNode <- function(sp, coord = extractCoords(sp, unique = TRUE), simplify=TRUE){
+  coord <- force(coord)  # force eval before simplify reassigns sp
   if(simplify){
     ext = raster::extent(sp)
     sp = rgeos::gSimplify(sp, tol = (ext[2] - ext[1] )*0.01)
