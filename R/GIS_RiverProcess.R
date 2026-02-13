@@ -209,6 +209,9 @@ snap_coords_to_ref <- function(sp_simplified, coord_ref, tol) {
     stop("snap_coords_to_ref: `coord_ref` must be a matrix with 2 columns.", call. = FALSE)
   }
   coord_ref <- coord_ref[, 1:2, drop = FALSE]
+  if (nrow(coord_ref) < 1) {
+    return(sp_simplified)
+  }
   tol <- as.numeric(tol)
   if (length(tol) != 1 || !is.finite(tol) || tol <= 0) {
     return(sp_simplified)
