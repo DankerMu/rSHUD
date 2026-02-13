@@ -197,6 +197,133 @@ NodeIDList <- function(sp, coord = extractCoords(sp, unique = TRUE) ){
   pt.list <- unlist(sp::coordinates(sp), recursive = FALSE)
   id.list<-lapply(pt.list, function(x) { xy2ID(x, coord = coord)})
 }
+
+snap_coords_to_ref <- function(sp_simplified, coord_ref, tol) {
+  if (!inherits(sp_simplified, "SpatialLines")) {
+    stop("snap_coords_to_ref: `sp_simplified` must be SpatialLines*.", call. = FALSE)
+  }
+  if (is.data.frame(coord_ref)) {
+    coord_ref <- as.matrix(coord_ref)
+  }
+  if (!is.matrix(coord_ref) || ncol(coord_ref) < 2) {
+    stop("snap_coords_to_ref: `coord_ref` must be a matrix with 2 columns.", call. = FALSE)
+  }
+  coord_ref <- coord_ref[, 1:2, drop = FALSE]
+  tol <- as.numeric(tol)
+  if (length(tol) != 1 || !is.finite(tol) || tol <= 0) {
+    return(sp_simplified)
+  }
+
+  lines <- sp_simplified@lines
+  n_parts <- sum(vapply(lines, function(x) length(x@Lines), integer(1)))
+  if (n_parts < 1) {
+    return(sp_simplified)
+  }
+
+  coords_list <- vector("list", n_parts)
+  line_i <- integer(n_parts)
+  line_j <- integer(n_parts)
+  k <- 0L
+  for (i in seq_along(lines)) {
+    parts <- lines[[i]]@Lines
+    for (j in seq_along(parts)) {
+      k <- k + 1L
+      coords_list[[k]] <- parts[[j]]@coords
+      line_i[[k]] <- i
+      line_j[[k]] <- j
+    }
+  }
+
+  row_counts <- vapply(coords_list, nrow, integer(1))
+  total_rows <- sum(row_counts)
+  if (total_rows < 1) {
+    return(sp_simplified)
+  }
+
+  coord_simplified <- do.call(rbind, lapply(coords_list, function(x) x[, 1:2, drop = FALSE]))
+
+  if (requireNamespace("RANN", quietly = TRUE)) {
+    nn <- RANN::nn2(data = coord_ref, query = coord_simplified, k = 1)
+    idx <- nn$nn.idx[, 1]
+    d <- nn$nn.dists[, 1]
+    keep <- is.finite(d) & (d <= tol)
+    if (any(keep)) {
+      coord_simplified[keep, ] <- coord_ref[idx[keep], , drop = FALSE]
+    }
+  } else {
+    tol2 <- tol * tol
+
+    cx_ref <- floor(coord_ref[, 1] / tol)
+    cy_ref <- floor(coord_ref[, 2] / tol)
+    key_ref <- paste(cx_ref, cy_ref, sep = ":")
+    buckets <- split(seq_len(nrow(coord_ref)), key_ref)
+
+    cx_q <- floor(coord_simplified[, 1] / tol)
+    cy_q <- floor(coord_simplified[, 2] / tol)
+    key_q <- paste(cx_q, cy_q, sep = ":")
+    q_groups <- split(seq_len(nrow(coord_simplified)), key_q)
+
+    offsets <- c(-1L, 0L, 1L)
+    for (key in names(q_groups)) {
+      idx_q <- q_groups[[key]]
+      if (length(idx_q) < 1) {
+        next
+      }
+      cx <- cx_q[idx_q[1]]
+      cy <- cy_q[idx_q[1]]
+      neighbor_keys <- paste(
+        rep(cx + offsets, each = 3),
+        rep(cy + offsets, times = 3),
+        sep = ":"
+      )
+      cand_idx <- unlist(buckets[neighbor_keys], use.names = FALSE)
+      if (length(cand_idx) < 1) {
+        next
+      }
+
+      ref_cand <- coord_ref[cand_idx, , drop = FALSE]
+      q_mat <- coord_simplified[idx_q, , drop = FALSE]
+
+      a2 <- rowSums(q_mat * q_mat)
+      b2 <- rowSums(ref_cand * ref_cand)
+      d2 <- outer(a2, b2, "+") - 2 * (q_mat %*% t(ref_cand))
+      d2 <- pmax(d2, 0)
+
+      best_pos <- max.col(-d2, ties.method = "first")
+      best_d2 <- d2[cbind(seq_len(nrow(q_mat)), best_pos)]
+      keep <- is.finite(best_d2) & (best_d2 <= tol2)
+      if (any(keep)) {
+        coord_simplified[idx_q[keep], ] <- ref_cand[best_pos[keep], , drop = FALSE]
+      }
+    }
+  }
+
+  ends <- cumsum(row_counts)
+  starts <- ends - row_counts + 1L
+  for (k in seq_len(n_parts)) {
+    i <- line_i[[k]]
+    j <- line_j[[k]]
+    idx <- starts[k]:ends[k]
+    coords <- lines[[i]]@Lines[[j]]@coords
+    coords[, 1:2] <- coord_simplified[idx, , drop = FALSE]
+    lines[[i]]@Lines[[j]]@coords <- coords
+  }
+  sp_simplified@lines <- lines
+
+  bbox <- matrix(
+    c(
+      min(coord_simplified[, 1]),
+      max(coord_simplified[, 1]),
+      min(coord_simplified[, 2]),
+      max(coord_simplified[, 2])
+    ),
+    nrow = 2,
+    byrow = TRUE,
+    dimnames = list(c("x", "y"), c("min", "max"))
+  )
+  sp_simplified@bbox <- bbox
+  sp_simplified
+}
 #' return the FROM and TO nodes index of the SpatialLines
 #' \code{FromToNode}
 #' @param sp SpatialLines*
@@ -205,10 +332,12 @@ NodeIDList <- function(sp, coord = extractCoords(sp, unique = TRUE) ){
 #' @return FROM and TO nodes index of the SpatialLines
 #' @export
 FromToNode <- function(sp, coord = extractCoords(sp, unique = TRUE), simplify=TRUE){
-  coord <- force(coord)  # force eval before simplify reassigns sp
   if(simplify){
     ext = raster::extent(sp)
-    sp = rgeos::gSimplify(sp, tol = (ext[2] - ext[1] )*0.01)
+    tol = (ext[2] - ext[1]) * 0.01
+    coord <- force(coord)  # force eval before simplify reassigns sp
+    sp = rgeos::gSimplify(sp, tol = tol)
+    sp = snap_coords_to_ref(sp, coord, tol = tol)
   }
   id.list = NodeIDList(sp, coord=coord)
   frto = cbind(
